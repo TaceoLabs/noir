@@ -71,6 +71,12 @@ def round_function(state, key, d, p, rc):
         state[i] = (state[i] + power) % p
     return state
 
+def decrypt_round_function(state, key, d, p, rc):
+    power = (state[0] + key + rc) % p
+    power = pow(power, d, p)
+    for i in range(1, len(state)):
+        state[i] = (state[i] + p - power) % p
+    return state
 
 def encrypt(input, key, d, p, rc):
     state = input.copy()
@@ -82,6 +88,15 @@ def encrypt(input, key, d, p, rc):
 
     return state
 
+def decrypt(input, key, d, p, rc):
+    state = input.copy()
+
+    for r in range(len(rc) - 1, 0, -1):
+        state = decrypt_round_function(state, key, d, p, rc[r])
+        state = state[1:] + state[:1]
+    state = decrypt_round_function(state, key, d, p, rc[0])
+
+    return state
 
 k = 2
 for t in range(2, 17):
@@ -93,5 +108,7 @@ for t in range(2, 17):
 
     input = [i for i in range(1, t+1)]
     cipher = encrypt(input, k, d, p, rc)
+    plain = decrypt(cipher, k, d, p, rc)
+    assert(plain == input)
 
     print_state(cipher)
