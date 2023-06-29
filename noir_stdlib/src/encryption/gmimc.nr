@@ -1,4 +1,6 @@
-mod const; // Instantiations of GMiMC for prime field of the same order as BN254
+// Instantiations of GMiMC for prime field of the same order as BN254
+mod const;
+mod enc;
 
 use crate::field::modulus_num_bits;
 
