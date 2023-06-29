@@ -43,11 +43,7 @@ def get_rc(r, d, p):
 
     return round_constants
 
-for t in range(2, 17):
-    d = get_d(p)
-    r = get_gmimc_rounds(t, d, p)
-    rc = get_rc(r, d, p)
-
+def print_config(d, t, r, rc):
     print("fn x{}_{}_config() -> GmimcConfig<{}> ".format(d, t, r), end="{\n")
     print("    config(")
     print("       alpha(),")
@@ -58,3 +54,44 @@ for t in range(2, 17):
     print("    )")
     print("}")
     print("")
+
+def print_state(state):
+    print("[")
+    for e in state:
+        h = hex(e)
+        if len(h) & 1 != 0:
+            h = "0x0" + h[2:]
+        print("    \"{}\", ".format(h))
+    print("]")
+
+def round_function(state, key, d, p, rc):
+    power = (state[0] + key + rc) % p
+    power = pow(power, d, p)
+    for i in range(1, len(state)):
+        state[i] = (state[i] + power) % p
+    return state
+
+
+def encrypt(input, key, d, p, rc):
+    state = input.copy()
+
+    for r in rc:
+        state = round_function(state, key, d, p, r)
+        state = state[-1:] + state[:-1]
+    state = round_function(state, key, d, p, r)
+
+    return state
+
+
+k = 2
+for t in range(2, 17):
+    d = get_d(p)
+    r = get_gmimc_rounds(t, d, p)
+    rc = get_rc(r, d, p)
+
+    # print_config(d, t, r, rc)
+
+    input = [i for i in range(1, t+1)]
+    cipher = encrypt(input, k, d, p, rc)
+
+    print_state(cipher)

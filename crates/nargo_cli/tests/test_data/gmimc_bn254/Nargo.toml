@@ -1,0 +1,6 @@
+[package]
+name = "GMiMC 254-bit encryipton test with alpha = 5"
+authors = [""]
+compiler_version = "0.1"
+
+[dependencies]
