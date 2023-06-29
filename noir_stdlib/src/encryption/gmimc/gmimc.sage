@@ -75,10 +75,10 @@ def round_function(state, key, d, p, rc):
 def encrypt(input, key, d, p, rc):
     state = input.copy()
 
-    for r in rc:
-        state = round_function(state, key, d, p, r)
+    for r in range(len(rc) - 1):
+        state = round_function(state, key, d, p, rc[r])
         state = state[-1:] + state[:-1]
-    state = round_function(state, key, d, p, r)
+    state = round_function(state, key, d, p, rc[-1])
 
     return state
 
