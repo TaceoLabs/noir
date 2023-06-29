@@ -12,6 +12,7 @@ mod ec;
 mod unsafe;
 mod collections;
 mod compat;
+mod encryption;
 
 #[builtin(println)]
 fn println<T>(_input : T) {}
