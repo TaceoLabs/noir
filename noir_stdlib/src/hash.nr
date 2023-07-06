@@ -1,5 +1,8 @@
 mod poseidon;
 
+#[foreign(reinforced_concrete)]
+fn reinforced_concrete<N>(_input : [Field; N]) -> Field {}
+
 #[foreign(sha256)]
 fn sha256<N>(_input : [u8; N]) -> [u8; 32] {}
 
