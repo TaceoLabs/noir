@@ -1,3 +1,5 @@
+hello_world/
+
 /target
 .DS_Store
 examples/**/target/
