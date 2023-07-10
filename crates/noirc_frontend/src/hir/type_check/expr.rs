@@ -42,7 +42,10 @@ impl<'interner> TypeChecker<'interner> {
                     HirLiteral::Array(HirArrayLiteral::Standard(arr)) => {
                         let elem_types = vecmap(&arr, |arg| self.check_expression(arg));
 
-                        let first_elem_type = elem_types.get(0).cloned().unwrap_or(Type::Error);
+                        let first_elem_type = elem_types
+                            .get(0)
+                            .cloned()
+                            .unwrap_or_else(|| self.interner.next_type_variable());
 
                         let arr_type = Type::Array(
                             Box::new(Type::Constant(arr.len() as u64)),
@@ -307,9 +310,9 @@ impl<'interner> TypeChecker<'interner> {
         let index_type = self.check_expression(&index_expr.index);
         let span = self.interner.expr_span(&index_expr.index);
 
-        index_type.make_subtype_of(&Type::field(Some(span)), span, &mut self.errors, || {
+        index_type.unify(&Type::polymorphic_integer(self.interner), span, &mut self.errors, || {
             TypeCheckError::TypeMismatch {
-                expected_typ: "Field".to_owned(),
+                expected_typ: "an integer".to_owned(),
                 expr_typ: index_type.to_string(),
                 expr_span: span,
             }
@@ -320,6 +323,7 @@ impl<'interner> TypeChecker<'interner> {
             // XXX: We can check the array bounds here also, but it may be better to constant fold first
             // and have ConstId instead of ExprId for constants
             Type::Array(_, base_type) => *base_type,
+            Type::Slice(base_type) => *base_type,
             Type::Error => Type::Error,
             typ => {
                 let span = self.interner.expr_span(&index_expr.collection);

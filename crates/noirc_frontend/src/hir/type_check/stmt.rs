@@ -177,12 +177,12 @@ impl<'interner> TypeChecker<'interner> {
                 let index_type = self.check_expression(&index);
                 let expr_span = self.interner.expr_span(&index);
 
-                index_type.make_subtype_of(
-                    &Type::field(Some(expr_span)),
+                index_type.unify(
+                    &Type::polymorphic_integer(self.interner),
                     expr_span,
                     &mut self.errors,
                     || TypeCheckError::TypeMismatch {
-                        expected_typ: "Field".to_owned(),
+                        expected_typ: "an integer".to_owned(),
                         expr_typ: index_type.to_string(),
                         expr_span,
                     },
@@ -193,6 +193,7 @@ impl<'interner> TypeChecker<'interner> {
 
                 let typ = match result {
                     Type::Array(_, elem_type) => *elem_type,
+                    Type::Slice(elem_type) => *elem_type,
                     Type::Error => Type::Error,
                     other => {
                         // TODO: Need a better span here
