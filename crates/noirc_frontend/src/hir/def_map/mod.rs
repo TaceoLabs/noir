@@ -6,7 +6,7 @@ use crate::parser::{parse_program, ParsedModule};
 use crate::token::Attribute;
 use arena::{Arena, Index};
 use fm::{FileId, FileManager};
-use noirc_errors::FileDiagnostic;
+use noirc_errors::{FileDiagnostic, Location};
 use std::collections::HashMap;
 
 mod module_def;
@@ -37,6 +37,12 @@ impl LocalModuleId {
 pub struct ModuleId {
     pub krate: CrateId,
     pub local_id: LocalModuleId,
+}
+
+impl ModuleId {
+    pub fn dummy_id() -> ModuleId {
+        ModuleId { krate: CrateId::dummy_id(), local_id: LocalModuleId::dummy_id() }
+    }
 }
 
 impl ModuleId {
@@ -71,7 +77,7 @@ impl CrateDefMap {
         // Without this check, the compiler will panic as it does not
         // expect the same crate to be processed twice. It would not
         // make the implementation wrong, if the same crate was processed twice, it just makes it slow.
-        if context.def_map(crate_id).is_some() {
+        if context.def_map(&crate_id).is_some() {
             return;
         }
 
@@ -81,8 +87,8 @@ impl CrateDefMap {
 
         // Allocate a default Module for the root, giving it a ModuleId
         let mut modules: Arena<ModuleData> = Arena::default();
-        let origin = ModuleOrigin::CrateRoot(root_file_id);
-        let root = modules.insert(ModuleData::new(None, origin, false));
+        let location = Location::new(Default::default(), root_file_id);
+        let root = modules.insert(ModuleData::new(None, location, false));
 
         let def_map = CrateDefMap {
             root: LocalModuleId(root),
@@ -114,13 +120,8 @@ impl CrateDefMap {
         root_module.find_func_with_name(&MAIN_FUNCTION.into())
     }
 
-    pub fn root_file_id(&self) -> FileId {
-        let root_module = &self.modules()[self.root.0];
-        root_module.origin.into()
-    }
-
-    pub fn module_file_id(&self, module_id: LocalModuleId) -> FileId {
-        self.modules[module_id.0].origin.file_id()
+    pub fn file_id(&self, module_id: LocalModuleId) -> FileId {
+        self.modules[module_id.0].location.file
     }
 
     /// Go through all modules in this crate, and find all functions in
@@ -157,7 +158,16 @@ impl CrateDefMap {
 
     /// Find a child module's name by inspecting its parent.
     /// Currently required as modules do not store their own names.
-    fn get_module_path(&self, child_id: Index, parent: Option<LocalModuleId>) -> String {
+    pub fn get_module_path(&self, child_id: Index, parent: Option<LocalModuleId>) -> String {
+        self.get_module_path_with_separator(child_id, parent, ".")
+    }
+
+    pub fn get_module_path_with_separator(
+        &self,
+        child_id: Index,
+        parent: Option<LocalModuleId>,
+        separator: &str,
+    ) -> String {
         if let Some(id) = parent {
             let parent = &self.modules[id.0];
             let name = parent
@@ -167,11 +177,11 @@ impl CrateDefMap {
                 .map(|(name, _)| &name.0.contents)
                 .expect("Child module was not a child of the given parent module");
 
-            let parent_name = self.get_module_path(id.0, parent.parent);
+            let parent_name = self.get_module_path_with_separator(id.0, parent.parent, separator);
             if parent_name.is_empty() {
                 name.to_string()
             } else {
-                format!("{parent_name}.{name}")
+                format!("{parent_name}{separator}{name}")
             }
         } else {
             String::new()

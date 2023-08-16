@@ -7,6 +7,14 @@ use crate::{parser::ParserError, Ident, Type};
 use super::import::PathResolutionError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum PubPosition {
+    #[error("parameter")]
+    Parameter,
+    #[error("return type")]
+    ReturnType,
+}
+
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ResolverError {
     #[error("Duplicate definition")]
     DuplicateDefinition { name: String, first_span: Span, second_span: Span },
@@ -29,13 +37,11 @@ pub enum ResolverError {
     #[error("Unneeded 'mut', pattern is already marked as mutable")]
     UnnecessaryMut { first_mut: Span, second_mut: Span },
     #[error("Unneeded 'pub', function is not the main method")]
-    UnnecessaryPub { ident: Ident },
+    UnnecessaryPub { ident: Ident, position: PubPosition },
     #[error("Required 'pub', main function must return public value")]
     NecessaryPub { ident: Ident },
     #[error("'distinct' keyword can only be used with main method")]
     DistinctNotAllowed { ident: Ident },
-    #[error("Expected const value where non-constant value was used")]
-    ExpectedComptimeVariable { name: String, span: Span },
     #[error("Missing expression for declared constant")]
     MissingRhsExpr { name: String, span: Span },
     #[error("Expression invalid in an array length context")]
@@ -60,6 +66,14 @@ pub enum ResolverError {
     ParserError(Box<ParserError>),
     #[error("Function is not defined in a contract yet sets its contract visibility")]
     ContractFunctionTypeInNormalFunction { span: Span },
+    #[error("Cannot create a mutable reference to {variable}, it was declared to be immutable")]
+    MutableReferenceToImmutableVariable { variable: String, span: Span },
+    #[error("Mutable references to array indices are unsupported")]
+    MutableReferenceToArrayElement { span: Span },
+    #[error("Function is not defined in a contract yet sets is_internal")]
+    ContractFunctionInternalInNormalFunction { span: Span },
+    #[error("Numeric constants should be printed without formatting braces")]
+    NumericConstantInFormatString { name: String, span: Span },
 }
 
 impl ResolverError {
@@ -154,12 +168,12 @@ impl From<ResolverError> for Diagnostic {
                 );
                 error
             }
-            ResolverError::UnnecessaryPub { ident } => {
+            ResolverError::UnnecessaryPub { ident, position } => {
                 let name = &ident.0.contents;
 
-                let mut diag = Diagnostic::simple_error(
-                    format!("unnecessary pub keyword on parameter for function {name}"),
-                    "unnecessary pub parameter".to_string(),
+                let mut diag = Diagnostic::simple_warning(
+                    format!("unnecessary pub keyword on {position} for function {name}"),
+                    format!("unnecessary pub {position}"),
                     ident.0.span(),
                 );
 
@@ -190,11 +204,6 @@ impl From<ResolverError> for Diagnostic {
                 diag.add_note("The `distinct` keyword is only valid when used on the main function of a program, as its only purpose is to ensure that all witness indices that occur in the abi are unique".to_owned());
                 diag
             }
-            ResolverError::ExpectedComptimeVariable { name, span } => Diagnostic::simple_error(
-                format!("expected constant variable where non-constant variable {name} was used"),
-                "expected const variable".to_string(),
-                span,
-            ),
             ResolverError::MissingRhsExpr { name, span } => Diagnostic::simple_error(
                 format!(
                     "no expression specifying the value stored by the constant variable {name}"
@@ -256,6 +265,22 @@ impl From<ResolverError> for Diagnostic {
             ResolverError::ContractFunctionTypeInNormalFunction { span } => Diagnostic::simple_error(
                 "Only functions defined within contracts can set their contract function type".into(),
                 "Non-contract functions cannot be 'open'".into(),
+                span,
+            ),
+            ResolverError::MutableReferenceToImmutableVariable { variable, span } => {
+                Diagnostic::simple_error(format!("Cannot mutably reference the immutable variable {variable}"), format!("{variable} is immutable"), span)
+            },
+            ResolverError::MutableReferenceToArrayElement { span } => {
+                Diagnostic::simple_error("Mutable references to array elements are currently unsupported".into(), "Try storing the element in a fresh variable first".into(), span)
+            },
+            ResolverError::ContractFunctionInternalInNormalFunction { span } => Diagnostic::simple_error(
+                "Only functions defined within contracts can set their functions to be internal".into(),
+                "Non-contract functions cannot be 'internal'".into(),
+                span,
+            ),
+            ResolverError::NumericConstantInFormatString { name, span } => Diagnostic::simple_error(
+                format!("cannot find `{name}` in this scope "),
+                "Numeric constants should be printed without formatting braces".to_string(),
                 span,
             ),
         }

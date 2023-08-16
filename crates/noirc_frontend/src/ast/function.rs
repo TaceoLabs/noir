@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{token::Attribute, Ident, Pattern};
+use crate::{token::Attribute, FunctionReturnType, Ident, Pattern};
 
 use super::{FunctionDefinition, UnresolvedType};
 
@@ -41,7 +41,10 @@ impl NoirFunction {
     }
 
     pub fn return_type(&self) -> UnresolvedType {
-        self.def.return_type.clone()
+        match &self.def.return_type {
+            FunctionReturnType::Default(_) => UnresolvedType::Unit,
+            FunctionReturnType::Ty(ty, _) => ty.clone(),
+        }
     }
     pub fn name(&self) -> &str {
         &self.name_ident().0.contents
@@ -82,7 +85,7 @@ impl From<FunctionDefinition> for NoirFunction {
             Some(Attribute::Foreign(_)) => FunctionKind::LowLevel,
             Some(Attribute::Test) => FunctionKind::Normal,
             Some(Attribute::Oracle(_)) => FunctionKind::Oracle,
-            None => FunctionKind::Normal,
+            Some(Attribute::Deprecated(_)) | None => FunctionKind::Normal,
         };
 
         NoirFunction { def: fd, kind }

@@ -1,24 +1,42 @@
-use std::{io::Write, path::Path};
+use std::io::Write;
 
 use acvm::{acir::native_types::WitnessMap, Backend};
 use clap::Args;
-use nargo::ops::execute_circuit;
-use noirc_driver::{CompileOptions, Driver};
-use noirc_frontend::node_interner::FuncId;
+use nargo::{ops::execute_circuit, package::Package, prepare_package};
+use nargo_toml::{get_package_manifest, resolve_workspace_from_toml, PackageSelection};
+use noirc_driver::{compile_no_check, CompileOptions};
+use noirc_frontend::{
+    graph::CrateName,
+    hir::{Context, FunctionNameMatch},
+    node_interner::FuncId,
+};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
-use crate::{
-    cli::{check_cmd::check_crate_and_report_errors, compile_cmd::setup_driver},
-    errors::CliError,
-};
+use crate::{cli::check_cmd::check_crate_and_report_errors, errors::CliError};
 
-use super::NargoConfig;
+use super::{compile_cmd::optimize_circuit, NargoConfig};
 
 /// Run the tests for this program
 #[derive(Debug, Clone, Args)]
 pub(crate) struct TestCommand {
     /// If given, only tests with names containing this string will be run
     test_name: Option<String>,
+
+    /// Display output of `println` statements
+    #[arg(long)]
+    show_output: bool,
+
+    /// Only run tests that match exactly
+    #[clap(long)]
+    exact: bool,
+
+    /// The name of the package to test
+    #[clap(long, conflicts_with = "workspace")]
+    package: Option<CrateName>,
+
+    /// Test all packages in the workspace
+    #[clap(long, conflicts_with = "package")]
+    workspace: bool,
 
     #[clap(flatten)]
     compile_options: CompileOptions,
@@ -29,52 +47,76 @@ pub(crate) fn run<B: Backend>(
     args: TestCommand,
     config: NargoConfig,
 ) -> Result<(), CliError<B>> {
-    let test_name: String = args.test_name.unwrap_or_else(|| "".to_owned());
+    let toml_path = get_package_manifest(&config.program_dir)?;
+    let default_selection =
+        if args.workspace { PackageSelection::All } else { PackageSelection::DefaultOrAll };
+    let selection = args.package.map_or(default_selection, PackageSelection::Selected);
+    let workspace = resolve_workspace_from_toml(&toml_path, selection)?;
 
-    run_tests(backend, &config.program_dir, &test_name, &args.compile_options)
+    let pattern = match &args.test_name {
+        Some(name) => {
+            if args.exact {
+                FunctionNameMatch::Exact(name)
+            } else {
+                FunctionNameMatch::Contains(name)
+            }
+        }
+        None => FunctionNameMatch::Anything,
+    };
+
+    for package in &workspace {
+        run_tests(backend, package, pattern, args.show_output, &args.compile_options)?;
+    }
+
+    Ok(())
 }
 
 fn run_tests<B: Backend>(
     backend: &B,
-    program_dir: &Path,
-    test_name: &str,
+    package: &Package,
+    test_name: FunctionNameMatch,
+    show_output: bool,
     compile_options: &CompileOptions,
 ) -> Result<(), CliError<B>> {
-    let mut driver = setup_driver(backend, program_dir)?;
-    check_crate_and_report_errors(&mut driver, compile_options.deny_warnings)?;
+    let (mut context, crate_id) = prepare_package(package);
+    check_crate_and_report_errors(&mut context, crate_id, compile_options.deny_warnings)?;
 
-    let test_functions = driver.get_all_test_functions_in_crate_matching(test_name);
-    println!("Running {} test functions...", test_functions.len());
+    let test_functions = context.get_all_test_functions_in_crate_matching(&crate_id, test_name);
+
+    println!("[{}] Running {} test functions", package.name, test_functions.len());
     let mut failing = 0;
 
     let writer = StandardStream::stderr(ColorChoice::Always);
     let mut writer = writer.lock();
 
-    for test_function in test_functions {
-        let test_name = driver.function_name(test_function);
-        writeln!(writer, "Testing {test_name}...").expect("Failed to write to stdout");
-        writer.flush().ok();
+    for (test_name, test_function) in test_functions {
+        write!(writer, "[{}] Testing {test_name}... ", package.name)
+            .expect("Failed to write to stdout");
+        writer.flush().expect("Failed to flush writer");
 
-        match run_test(backend, test_name, test_function, &driver, compile_options) {
+        match run_test(backend, &test_name, test_function, &context, show_output, compile_options) {
             Ok(_) => {
-                writer.set_color(ColorSpec::new().set_fg(Some(Color::Green))).ok();
-                writeln!(writer, "ok").ok();
+                writer
+                    .set_color(ColorSpec::new().set_fg(Some(Color::Green)))
+                    .expect("Failed to set color");
+                writeln!(writer, "ok").expect("Failed to write to stdout");
             }
             // Assume an error was already printed to stdout
             Err(_) => failing += 1,
         }
-        writer.reset().ok();
+        writer.reset().expect("Failed to reset writer");
     }
 
     if failing == 0 {
-        writer.set_color(ColorSpec::new().set_fg(Some(Color::Green))).unwrap();
-        writeln!(writer, "All tests passed").ok();
+        write!(writer, "[{}] ", package.name).expect("Failed to write to stdout");
+        writer.set_color(ColorSpec::new().set_fg(Some(Color::Green))).expect("Failed to set color");
+        writeln!(writer, "All tests passed").expect("Failed to write to stdout");
     } else {
         let plural = if failing == 1 { "" } else { "s" };
-        return Err(CliError::Generic(format!("{failing} test{plural} failed")));
+        return Err(CliError::Generic(format!("[{}] {failing} test{plural} failed", package.name)));
     }
 
-    writer.reset().ok();
+    writer.reset().expect("Failed to reset writer");
     Ok(())
 }
 
@@ -82,16 +124,21 @@ fn run_test<B: Backend>(
     backend: &B,
     test_name: &str,
     main: FuncId,
-    driver: &Driver,
+    context: &Context,
+    show_output: bool,
     config: &CompileOptions,
 ) -> Result<(), CliError<B>> {
-    let program = driver
-        .compile_no_check(config, main)
-        .map_err(|_| CliError::Generic(format!("Test '{test_name}' failed to compile")))?;
+    let mut program = compile_no_check(context, config, main).map_err(|err| {
+        noirc_errors::reporter::report_all(&context.file_manager, &[err], config.deny_warnings);
+        CliError::Generic(format!("Test '{test_name}' failed to compile"))
+    })?;
+
+    // Note: We could perform this test using the unoptimized ACIR as generated by `compile_no_check`.
+    program.circuit = optimize_circuit(backend, program.circuit).unwrap().0;
 
     // Run the backend to ensure the PWG evaluates functions like std::hash::pedersen,
     // otherwise constraints involving these expressions will not error.
-    match execute_circuit(backend, program.circuit, WitnessMap::new()) {
+    match execute_circuit(backend, program.circuit, WitnessMap::new(), show_output) {
         Ok(_) => Ok(()),
         Err(error) => {
             let writer = StandardStream::stderr(ColorChoice::Always);

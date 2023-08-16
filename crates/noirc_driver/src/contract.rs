@@ -1,6 +1,7 @@
 use crate::program::{deserialize_circuit, serialize_circuit};
 use acvm::acir::circuit::Circuit;
 use noirc_abi::Abi;
+use noirc_errors::debug_info::DebugInfo;
 use serde::{Deserialize, Serialize};
 
 /// Describes the types of smart contract functions that are allowed.
@@ -41,10 +42,14 @@ pub struct ContractFunction {
 
     pub function_type: ContractFunctionType,
 
+    pub is_internal: bool,
+
     pub abi: Abi,
 
     #[serde(serialize_with = "serialize_circuit", deserialize_with = "deserialize_circuit")]
     pub bytecode: Circuit,
+
+    pub debug: DebugInfo,
 }
 
 impl ContractFunctionType {
