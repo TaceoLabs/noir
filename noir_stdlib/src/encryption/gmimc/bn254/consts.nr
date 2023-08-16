@@ -4,7 +4,7 @@ use crate::encryption::gmimc::GmimcConfig;
 use crate::encryption::gmimc::config;
 
 // S-box power
-fn alpha() -> comptime Field {
+fn alpha() -> Field {
     5
 }
 

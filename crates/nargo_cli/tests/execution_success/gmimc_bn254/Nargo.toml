@@ -1,0 +1,8 @@
+[package]
+name = "gmimc_bn254"
+description = "GMiMC 254-bit encryipton test with alpha = 5"
+type = "bin"
+authors = [""]
+compiler_version = "0.1"
+
+[dependencies]

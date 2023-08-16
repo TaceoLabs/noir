@@ -3,11 +3,11 @@ mod bn254; // Instantiations of GMiMC for prime field of the same order as BN254
 use crate::field::modulus_num_bits;
 
 struct GmimcConfig<R> {
-    alpha: comptime Field, // S-box power; depends on the underlying field
+    alpha: Field, // S-box power; depends on the underlying field
     arc: [Field; R], // round constants
 }
 
-fn config<R> (alpha: comptime Field, arc: [Field; R]) -> GmimcConfig<R> {
+fn config<R> (alpha: Field, arc: [Field; R]) -> GmimcConfig<R> {
     GmimcConfig {
         alpha: alpha,
         arc: arc,
@@ -54,7 +54,7 @@ fn inv_feistel_shift<T>(mut state: [Field; T]) -> [Field; T]  {
 
 // General GMiMC block cipher
 fn encrypt<T, R>(gmimc_conf: GmimcConfig<R>, mut x: [Field; T], k: Field) -> [Field; T] {
-    assert(modulus_num_bits() >= 128); // otherwise key is too small
+    assert(modulus_num_bits() as u16 >= 128); // otherwise key is too small
 
     let GmimcConfig {alpha, arc} = gmimc_conf;
 
@@ -67,7 +67,7 @@ fn encrypt<T, R>(gmimc_conf: GmimcConfig<R>, mut x: [Field; T], k: Field) -> [Fi
 }
 
 fn decrypt<T, R>(gmimc_conf: GmimcConfig<R>, mut x: [Field; T], k: Field) -> [Field; T] {
-    assert(modulus_num_bits() >= 128); // otherwise key is too small
+    assert(modulus_num_bits() as u16 >= 128); // otherwise key is too small
 
     let GmimcConfig {alpha, arc} = gmimc_conf;
 
