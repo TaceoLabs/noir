@@ -5,6 +5,7 @@ use crate::encryption::gmimc::config;
 
 // S-box power
 fn alpha() -> Field {
+    assert(crate::compat::is_bn254()); // To prevent config generation for other curves.
     5
 }
 
