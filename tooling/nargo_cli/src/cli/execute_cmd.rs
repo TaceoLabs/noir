@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Instant;
 
 use acvm::acir::native_types::WitnessStack;
 use acvm::FieldElement;
@@ -149,8 +150,10 @@ pub(crate) fn execute_program(
     package_name: Option<String>,
     pedantic_solving: bool,
 ) -> Result<WitnessStack<FieldElement>, CliError> {
+    let name: String = package_name.to_owned().unwrap_or_default();
     let initial_witness = compiled_program.abi.encode(inputs_map, None)?;
 
+    let start = Instant::now();
     let solved_witness_stack_err = nargo::ops::execute_program(
         &compiled_program.program,
         initial_witness,
@@ -164,6 +167,8 @@ pub(crate) fn execute_program(
         }
         .build(),
     );
+    let duration = start.elapsed().as_micros() as f64 / 1000.;
+    println!("[{}] Generate witness took {duration} ms", name);
     match solved_witness_stack_err {
         Ok(solved_witness_stack) => Ok(solved_witness_stack),
         Err(err) => {
