@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, time::Instant};
 
 use acir::{FieldElement, native_types::WitnessStack};
 use acvm::BlackBoxFunctionSolver;
@@ -43,12 +43,15 @@ where
 
     let initial_witness = circuit.abi.encode(&input_map, None)?;
 
+    let start = Instant::now();
     let witness_stack = nargo::ops::execute_program(
         &circuit.program,
         initial_witness,
         blackbox_solver,
         foreign_call_executor,
     )?;
+    let duration = start.elapsed().as_micros() as f64 / 1000.;
+    println!("Generate witness took {duration} ms");
 
     let main_witness =
         &witness_stack.peek().expect("Should have at least one witness on the stack").witness;
